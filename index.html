@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trading Stats Tracker</title>
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <span class="logo-icon">📊</span>
+                <h1>Trading Stats Tracker</h1>
+            </div>
+            <p class="tagline">Analyze your MT4/MT5 trading performance</p>
+        </header>
+
+        <!-- Upload Section -->
+        <section class="upload-section" id="uploadSection">
+            <div class="upload-box" id="uploadBox">
+                <div class="upload-icon">📁</div>
+                <h2>Upload Trade History</h2>
+                <p>Drag & drop your MT4/MT5 trade history file here</p>
+                <p class="file-types">Supports: CSV, HTML exports from MetaTrader</p>
+                <input type="file" id="fileInput" accept=".csv,.htm,.html" hidden>
+                <button class="upload-btn" onclick="document.getElementById('fileInput').click()">
+                    Choose File
+                </button>
+            </div>
+            <div class="sample-data">
+                <button class="sample-btn" onclick="loadSampleData()">
+                    📈 Load Sample Data
+                </button>
+            </div>
+        </section>
+
+        <!-- Dashboard Section (Hidden initially) -->
+        <section class="dashboard" id="dashboard" style="display: none;">
+            <!-- Summary Cards -->
+            <div class="stats-grid">
+                <div class="stat-card profit">
+                    <div class="stat-icon">💰</div>
+                    <div class="stat-content">
+                        <h3>Total Profit/Loss</h3>
+                        <p class="stat-value" id="totalPnL">$0.00</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">🎯</div>
+                    <div class="stat-content">
+                        <h3>Win Rate</h3>
+                        <p class="stat-value" id="winRate">0%</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">📊</div>
+                    <div class="stat-content">
+                        <h3>Total Trades</h3>
+                        <p class="stat-value" id="totalTrades">0</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">⚖️</div>
+                    <div class="stat-content">
+                        <h3>Profit Factor</h3>
+                        <p class="stat-value" id="profitFactor">0.00</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">📉</div>
+                    <div class="stat-content">
+                        <h3>Max Drawdown</h3>
+                        <p class="stat-value" id="maxDrawdown">$0.00</p>
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-icon">📈</div>
+                    <div class="stat-content">
+                        <h3>Avg Trade</h3>
+                        <p class="stat-value" id="avgTrade">$0.00</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts Section -->
+            <div class="charts-container">
+                <div class="chart-box">
+                    <h3>Equity Curve</h3>
+                    <canvas id="equityChart"></canvas>
+                </div>
+                <div class="chart-box">
+                    <h3>Profit/Loss Distribution</h3>
+                    <canvas id="pnlDistribution"></canvas>
+                </div>
+                <div class="chart-box">
+                    <h3>Win/Loss by Day of Week</h3>
+                    <canvas id="dayOfWeekChart"></canvas>
+                </div>
+                <div class="chart-box">
+                    <h3>Trade Performance by Symbol</h3>
+                    <canvas id="symbolChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Additional Stats -->
+            <div class="additional-stats">
+                <div class="stats-table-container">
+                    <h3>Detailed Statistics</h3>
+                    <table class="stats-table">
+                        <tbody>
+                            <tr>
+                                <td>Best Trade</td>
+                                <td id="bestTrade">$0.00</td>
+                            </tr>
+                            <tr>
+                                <td>Worst Trade</td>
+                                <td id="worstTrade">$0.00</td>
+                            </tr>
+                            <tr>
+                                <td>Average Win</td>
+                                <td id="avgWin">$0.00</td>
+                            </tr>
+                            <tr>
+                                <td>Average Loss</td>
+                                <td id="avgLoss">$0.00</td>
+                            </tr>
+                            <tr>
+                                <td>Largest Winning Streak</td>
+                                <td id="winStreak">0</td>
+                            </tr>
+                            <tr>
+                                <td>Largest Losing Streak</td>
+                                <td id="loseStreak">0</td>
+                            </tr>
+                            <tr>
+                                <td>Average Holding Time</td>
+                                <td id="avgHoldTime">0h 0m</td>
+                            </tr>
+                            <tr>
+                                <td>Risk/Reward Ratio</td>
+                                <td id="riskReward">0.00</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="stats-table-container">
+                    <h3>Performance by Hour</h3>
+                    <canvas id="hourChart"></canvas>
+                </div>
+            </div>
+
+            <!-- Trade History Table -->
+            <div class="trade-history">
+                <h3>Trade History</h3>
+                <div class="table-wrapper">
+                    <table class="history-table" id="tradeTable">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Symbol</th>
+                                <th>Type</th>
+                                <th>Volume</th>
+                                <th>Open Price</th>
+                                <th>Close Price</th>
+                                <th>Profit/Loss</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tradeTableBody">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Reset Button -->
+            <div class="reset-section">
+                <button class="reset-btn" onclick="resetDashboard()">
+                    🔄 Upload New Data
+                </button>
+            </div>
+        </section>
+    </div>
+
+    <script src="parser.js"></script>
+    <script src="stats.js"></script>
+    <script src="charts.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
