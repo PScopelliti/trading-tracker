@@ -8,6 +8,7 @@ let parser = null;
 let statsCalculator = null;
 let chartManager = null;
 let currentTrades = [];
+let currentCurrency = 'USD'; // Will be detected from file
 
 // Initialize application
 document.addEventListener('DOMContentLoaded', () => {
@@ -82,6 +83,13 @@ async function processFile(file) {
         
         const trades = await parser.parseFile(file);
         currentTrades = trades;
+        
+        // Extract currency from parsed data
+        if (trades.currency) {
+            currentCurrency = trades.currency;
+        } else if (parser.currency) {
+            currentCurrency = parser.currency;
+        }
         
         showToast(`Successfully loaded ${trades.length} trades!`, 'success');
         displayDashboard(trades);
@@ -332,11 +340,29 @@ function resetDashboard() {
 }
 
 /**
- * Format currency value
+ * Format currency value with detected currency symbol
  */
 function formatCurrency(value) {
     const sign = value >= 0 ? '' : '-';
-    return sign + '$' + Math.abs(value).toFixed(2);
+    const symbol = getCurrencySymbol(currentCurrency);
+    return sign + symbol + Math.abs(value).toFixed(2);
+}
+
+/**
+ * Get currency symbol from currency code
+ */
+function getCurrencySymbol(currencyCode) {
+    const symbols = {
+        'USD': '$',
+        'EUR': '€',
+        'GBP': '£',
+        'JPY': '¥',
+        'AUD': 'A$',
+        'CAD': 'C$',
+        'CHF': 'CHF ',
+        'NZD': 'NZ$'
+    };
+    return symbols[currencyCode] || currencyCode + ' ';
 }
 
 /**

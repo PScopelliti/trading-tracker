@@ -6,6 +6,8 @@
 class TradeParser {
     constructor() {
         this.trades = [];
+        this.currency = 'USD'; // Default currency, will be detected from file
+        this.accountInfo = {};
     }
 
     /**
@@ -26,13 +28,73 @@ class TradeParser {
 
     /**
      * Read file content as text
+     * Handles UTF-16 encoded files (common in MT4/MT5 exports)
      */
     readFileContent(file) {
         return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (e) => resolve(e.target.result);
-            reader.onerror = (e) => reject(new Error('Failed to read file'));
-            reader.readAsText(file);
+            // For HTML files, try UTF-16 first since MT5 exports are often UTF-16 LE
+            const isHtml = file.name.toLowerCase().endsWith('.html') || file.name.toLowerCase().endsWith('.htm');
+            
+            if (isHtml) {
+                // Read as ArrayBuffer first to check encoding
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const arrayBuffer = e.target.result;
+                    const bytes = new Uint8Array(arrayBuffer);
+                    
+                    console.log('First 10 bytes:', Array.from(bytes.slice(0, 10)).map(b => '0x' + b.toString(16).padStart(2, '0')).join(' '));
+                    
+                    // Check for UTF-16 LE BOM: 0xFF 0xFE
+                    if (bytes[0] === 0xFF && bytes[1] === 0xFE) {
+                        console.log('Detected UTF-16 LE BOM');
+                        const decoder = new TextDecoder('utf-16le');
+                        const content = decoder.decode(arrayBuffer);
+                        console.log('Content starts with:', content.substring(0, 100));
+                        resolve(content);
+                        return;
+                    }
+                    
+                    // Check for UTF-16 BE BOM: 0xFE 0xFF
+                    if (bytes[0] === 0xFE && bytes[1] === 0xFF) {
+                        console.log('Detected UTF-16 BE BOM');
+                        const decoder = new TextDecoder('utf-16be');
+                        const content = decoder.decode(arrayBuffer);
+                        resolve(content);
+                        return;
+                    }
+                    
+                    // Check for UTF-16 LE without BOM (common pattern: ASCII char followed by 0x00)
+                    // Look for pattern: [valid ASCII][0x00][valid ASCII][0x00]...
+                    let utf16LePattern = 0;
+                    for (let i = 0; i < Math.min(100, bytes.length - 1); i += 2) {
+                        if (bytes[i] >= 0x20 && bytes[i] <= 0x7E && bytes[i + 1] === 0x00) {
+                            utf16LePattern++;
+                        }
+                    }
+                    
+                    if (utf16LePattern > 20) {
+                        console.log('Detected UTF-16 LE pattern without BOM');
+                        const decoder = new TextDecoder('utf-16le');
+                        const content = decoder.decode(arrayBuffer);
+                        resolve(content);
+                        return;
+                    }
+                    
+                    // Fall back to UTF-8
+                    console.log('Using UTF-8 encoding');
+                    const decoder = new TextDecoder('utf-8');
+                    const content = decoder.decode(arrayBuffer);
+                    resolve(content);
+                };
+                reader.onerror = (e) => reject(new Error('Failed to read file'));
+                reader.readAsArrayBuffer(file);
+            } else {
+                // For non-HTML files, use default text reading
+                const reader = new FileReader();
+                reader.onload = (e) => resolve(e.target.result);
+                reader.onerror = (e) => reject(new Error('Failed to read file'));
+                reader.readAsText(file);
+            }
         });
     }
 
@@ -212,7 +274,21 @@ class TradeParser {
         const parser = new DOMParser();
         const doc = parser.parseFromString(content, 'text/html');
         
-        // Find all tables
+        // Extract account info and currency first
+        this.extractAccountInfo(doc);
+        
+        console.log('Detected currency:', this.currency);
+        
+        // Try MT5-specific parsing first
+        const mt5Trades = this.parseMT5Report(doc);
+        if (mt5Trades.length > 0) {
+            console.log('Parsed MT5 trades:', mt5Trades.length);
+            mt5Trades.currency = this.currency;
+            mt5Trades.accountInfo = this.accountInfo;
+            return mt5Trades;
+        }
+
+        // Fallback to generic HTML table parsing
         const tables = doc.querySelectorAll('table');
         let trades = [];
 
@@ -220,7 +296,6 @@ class TradeParser {
             const rows = table.querySelectorAll('tr');
             if (rows.length < 2) continue;
 
-            // Try to find trade data in this table
             const tableTrades = this.parseHTMLTable(rows);
             if (tableTrades.length > 0) {
                 trades = trades.concat(tableTrades);
@@ -231,11 +306,161 @@ class TradeParser {
             throw new Error('No valid trades found in HTML file');
         }
 
+        // Attach currency info to result
+        trades.currency = this.currency;
+        trades.accountInfo = this.accountInfo;
+
         return trades;
     }
 
     /**
-     * Parse HTML table rows for trade data
+     * Extract account info from MT5 HTML report
+     */
+    extractAccountInfo(doc) {
+        const allText = doc.body ? doc.body.textContent : '';
+        
+        // Look for currency in account info - format: "52061359 (GBP, PepperstoneUK-Live, real, Hedge)"
+        const currencyMatch = allText.match(/\d+\s*\(\s*(USD|EUR|GBP|JPY|AUD|CAD|CHF|NZD)[,\s]/i);
+        if (currencyMatch) {
+            this.currency = currencyMatch[1].toUpperCase();
+            console.log('Currency extracted:', this.currency);
+        }
+        
+        // Extract account number
+        const accountMatch = allText.match(/Account:\s*(\d+)/i);
+        if (accountMatch) {
+            this.accountInfo.accountNumber = accountMatch[1];
+        }
+        
+        // Extract name
+        const nameMatch = allText.match(/Name:\s*([^<\n]+)/i);
+        if (nameMatch) {
+            this.accountInfo.name = nameMatch[1].trim();
+        }
+    }
+
+    /**
+     * Parse MT5 Report - looks for Positions section specifically
+     */
+    parseMT5Report(doc) {
+        const trades = [];
+        const allRows = doc.querySelectorAll('tr');
+        
+        let inPositionsSection = false;
+        let positionsHeaderFound = false;
+
+        for (let i = 0; i < allRows.length; i++) {
+            const row = allRows[i];
+            const rowText = row.textContent;
+            
+            // Look for "Positions" section header (the section title, not the column header)
+            const thElements = row.querySelectorAll('th');
+            for (const th of thElements) {
+                const thText = th.textContent.trim();
+                if (thText === 'Positions') {
+                    inPositionsSection = true;
+                    console.log('Found Positions section');
+                    continue;
+                }
+                // Detect end of Positions section
+                if (inPositionsSection && (thText === 'Orders' || thText === 'Deals' || thText === 'Results')) {
+                    console.log('End of Positions section, found:', thText);
+                    inPositionsSection = false;
+                    positionsHeaderFound = false;
+                }
+            }
+
+            if (!inPositionsSection) continue;
+
+            // Look for the Positions table header row
+            const cells = row.querySelectorAll('td, th');
+            if (cells.length > 0) {
+                const firstCellText = cells[0].textContent.trim();
+                if (firstCellText === 'Time' && rowText.includes('Position') && rowText.includes('Symbol')) {
+                    positionsHeaderFound = true;
+                    console.log('Found Positions header row');
+                    continue;
+                }
+            }
+
+            if (!positionsHeaderFound) continue;
+
+            // Now we're parsing data rows
+            const dataCells = row.querySelectorAll('td');
+            if (dataCells.length < 5) continue;
+
+            // Build visible cell values, skipping hidden cells
+            // Check both className and classList for 'hidden'
+            const visibleValues = [];
+            for (const cell of dataCells) {
+                const className = cell.getAttribute('class') || '';
+                if (className.includes('hidden')) continue;
+                visibleValues.push(cell.textContent.trim());
+            }
+
+            console.log('Row cells:', dataCells.length, 'visible:', visibleValues.length, 'values:', visibleValues.slice(0, 5).join(', '));
+
+            // MT5 Positions row structure (after filtering hidden):
+            // 0: OpenTime, 1: PositionID, 2: Symbol, 3: Type, 4: Volume,
+            // 5: OpenPrice, 6: S/L, 7: T/P, 8: CloseTime, 9: ClosePrice,
+            // 10: Commission, 11: Swap, 12: Profit
+            
+            if (visibleValues.length < 13) continue;
+
+            const symbol = visibleValues[2];
+            const type = visibleValues[3].toLowerCase();
+
+            // Must be buy or sell
+            if (type !== 'buy' && type !== 'sell') {
+                console.log('Skipping non-trade row, type:', type);
+                continue;
+            }
+
+            try {
+                const profit = this.parseNumber(visibleValues[12]);
+                
+                const trade = {
+                    ticket: visibleValues[1],
+                    symbol: symbol,
+                    type: type,
+                    volume: this.parseNumber(visibleValues[4]),
+                    openPrice: this.parseNumber(visibleValues[5]),
+                    sl: this.parseNumber(visibleValues[6]),
+                    tp: this.parseNumber(visibleValues[7]),
+                    closeTime: this.parseDate(visibleValues[8]),
+                    closePrice: this.parseNumber(visibleValues[9]),
+                    commission: this.parseNumber(visibleValues[10]),
+                    swap: this.parseNumber(visibleValues[11]),
+                    profit: profit,
+                    openTime: this.parseDate(visibleValues[0])
+                };
+
+                trade.netProfit = trade.profit + trade.commission + trade.swap;
+
+                console.log('Parsed trade:', trade.symbol, trade.type, 'profit:', trade.profit, 'netProfit:', trade.netProfit);
+                trades.push(trade);
+            } catch (e) {
+                console.warn('Error parsing trade row:', e.message);
+            }
+        }
+
+        console.log('Total MT5 trades parsed:', trades.length);
+        return trades;
+    }
+
+    /**
+     * Parse number from string, handling spaces and different formats
+     */
+    parseNumber(value) {
+        if (!value) return 0;
+        // Remove spaces (thousands separator in some locales) and parse
+        const cleaned = value.toString().replace(/\s/g, '').replace(',', '.');
+        const num = parseFloat(cleaned);
+        return isNaN(num) ? 0 : num;
+    }
+
+    /**
+     * Parse HTML table rows for trade data (generic fallback)
      */
     parseHTMLTable(rows) {
         const trades = [];
@@ -245,7 +470,9 @@ class TradeParser {
             const cells = rows[i].querySelectorAll('td, th');
             if (cells.length < 4) continue;
 
-            const cellValues = Array.from(cells).map(cell => cell.textContent.trim());
+            // Filter out hidden cells
+            const visibleCells = Array.from(cells).filter(cell => !cell.classList.contains('hidden'));
+            const cellValues = visibleCells.map(cell => cell.textContent.trim());
             
             // Try to detect header row
             if (!headerMap && this.isHeaderRow(cellValues)) {
@@ -257,7 +484,7 @@ class TradeParser {
             if (this.isNonTradeRow(cellValues)) continue;
 
             try {
-                const trade = headerMap 
+                const trade = headerMap
                     ? this.mapColumnsToTrade(cellValues, headerMap)
                     : this.parseGenericHTMLRow(cellValues);
 
