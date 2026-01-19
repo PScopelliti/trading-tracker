@@ -7,6 +7,7 @@
 let parser = null;
 let statsCalculator = null;
 let chartManager = null;
+let calendarManager = null;
 let currentTrades = [];
 let currentCurrency = 'USD'; // Will be detected from file
 
@@ -18,6 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
 function initializeApp() {
     parser = new TradeParser();
     chartManager = new ChartManager();
+    calendarManager = new CalendarManager();
     
     setupFileUpload();
     setupDragAndDrop();
@@ -238,6 +240,9 @@ function displayDashboard(trades) {
     chartManager.destroyCharts();
     chartManager.initializeCharts(stats);
     
+    // Initialize calendar with trade data
+    calendarManager.initialize(trades);
+    
     // Show dashboard, hide upload
     document.getElementById('uploadSection').style.display = 'none';
     document.getElementById('dashboard').style.display = 'block';
@@ -267,8 +272,17 @@ function updateStatCards(stats) {
     // Max Drawdown
     document.getElementById('maxDrawdown').textContent = formatCurrency(-stats.maxDrawdown);
     
+    // Max Drawdown Percent
+    document.getElementById('maxDrawdownPercent').textContent = stats.maxDrawdownPercent.toFixed(2) + '%';
+    
     // Average Trade
     document.getElementById('avgTrade').textContent = formatCurrency(stats.avgTrade);
+    
+    // Return Percent (based on initial balance if available, otherwise show profit as % of max drawdown)
+    const returnPercent = stats.maxDrawdown > 0 ? (stats.netPnL / stats.maxDrawdown) * 100 : 0;
+    const returnPercentElement = document.getElementById('returnPercent');
+    returnPercentElement.textContent = (returnPercent >= 0 ? '+' : '') + returnPercent.toFixed(2) + '%';
+    returnPercentElement.className = 'stat-value ' + (returnPercent >= 0 ? 'positive' : 'negative');
 }
 
 /**
@@ -307,6 +321,7 @@ function updateTradeTable(trades) {
         const profit = trade.netProfit !== undefined ? trade.netProfit : trade.profit;
         const profitClass = profit >= 0 ? 'profit-positive' : 'profit-negative';
         const typeClass = trade.type === 'buy' ? 'type-buy' : 'type-sell';
+        const duration = formatDuration(trade.openTime, trade.closeTime);
         
         row.innerHTML = `
             <td>${formatDate(trade.closeTime)}</td>
@@ -315,6 +330,7 @@ function updateTradeTable(trades) {
             <td>${trade.volume.toFixed(2)}</td>
             <td>${formatPrice(trade.openPrice, trade.symbol)}</td>
             <td>${formatPrice(trade.closePrice, trade.symbol)}</td>
+            <td>${duration}</td>
             <td class="${profitClass}">${formatCurrency(profit)}</td>
         `;
         
@@ -340,12 +356,16 @@ function resetDashboard() {
 }
 
 /**
- * Format currency value with detected currency symbol
+ * Format currency value with detected currency symbol and thousand separators
  */
 function formatCurrency(value) {
     const sign = value >= 0 ? '' : '-';
     const symbol = getCurrencySymbol(currentCurrency);
-    return sign + symbol + Math.abs(value).toFixed(2);
+    const formatted = Math.abs(value).toLocaleString('en-US', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    });
+    return sign + symbol + formatted;
 }
 
 /**
@@ -392,6 +412,37 @@ function formatPrice(price, symbol) {
         return price.toFixed(2);
     } else {
         return price.toFixed(5);
+    }
+}
+
+/**
+ * Format duration between open and close time
+ */
+function formatDuration(openTime, closeTime) {
+    if (!openTime || !closeTime) return '-';
+    
+    const open = new Date(openTime);
+    const close = new Date(closeTime);
+    const diffMs = close - open;
+    
+    if (diffMs < 0) return '-';
+    
+    const diffSeconds = Math.floor(diffMs / 1000);
+    const diffMinutes = Math.floor(diffSeconds / 60);
+    const diffHours = Math.floor(diffMinutes / 60);
+    const diffDays = Math.floor(diffHours / 24);
+    
+    if (diffDays > 0) {
+        const remainingHours = diffHours % 24;
+        return `${diffDays}d ${remainingHours}h`;
+    } else if (diffHours > 0) {
+        const remainingMinutes = diffMinutes % 60;
+        return `${diffHours}h ${remainingMinutes}m`;
+    } else if (diffMinutes > 0) {
+        const remainingSeconds = diffSeconds % 60;
+        return `${diffMinutes}m ${remainingSeconds}s`;
+    } else {
+        return `${diffSeconds}s`;
     }
 }
 
