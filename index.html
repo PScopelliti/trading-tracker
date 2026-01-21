@@ -97,6 +97,13 @@
                         <p class="stat-value" id="returnPercent">0.00%</p>
                     </div>
                 </div>
+                <div class="stat-card pips">
+                    <div class="stat-icon">📍</div>
+                    <div class="stat-content">
+                        <h3>Total Pips</h3>
+                        <p class="stat-value" id="totalPips">0.0</p>
+                    </div>
+                </div>
             </div>
 
             <!-- Charts Section -->
@@ -104,6 +111,10 @@
                 <div class="chart-box">
                     <h3>Equity Curve</h3>
                     <canvas id="equityChart"></canvas>
+                </div>
+                <div class="chart-box">
+                    <h3>📈 Cumulative Pips</h3>
+                    <canvas id="pipsChart"></canvas>
                 </div>
                 <div class="chart-box">
                     <h3>Profit/Loss Distribution</h3>
@@ -220,6 +231,7 @@
                                 <th>Open Price</th>
                                 <th>Close Price</th>
                                 <th>Duration</th>
+                                <th>Pips</th>
                                 <th>Profit/Loss</th>
                             </tr>
                         </thead>

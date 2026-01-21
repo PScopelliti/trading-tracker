@@ -23,7 +23,7 @@ class CalendarManager {
     }
 
     /**
-     * Calculate daily profit/loss from trades
+     * Calculate daily profit/loss and pips from trades
      */
     calculateDailyPnL() {
         this.dailyPnL = {};
@@ -37,6 +37,7 @@ class CalendarManager {
             if (!this.dailyPnL[dateKey]) {
                 this.dailyPnL[dateKey] = {
                     profit: 0,
+                    pips: 0,
                     trades: 0,
                     wins: 0,
                     losses: 0
@@ -44,7 +45,10 @@ class CalendarManager {
             }
             
             const profit = trade.netProfit !== undefined ? trade.netProfit : trade.profit;
+            const pips = this.calculateTradePips(trade);
+            
             this.dailyPnL[dateKey].profit += profit;
+            this.dailyPnL[dateKey].pips += pips;
             this.dailyPnL[dateKey].trades++;
             
             if (profit > 0) {
@@ -53,6 +57,51 @@ class CalendarManager {
                 this.dailyPnL[dateKey].losses++;
             }
         }
+    }
+
+    /**
+     * Get pip size for a symbol
+     */
+    getPipSize(symbol) {
+        if (!symbol) return 0.0001;
+        
+        const upperSymbol = symbol.toUpperCase();
+        
+        // JPY pairs have pip size of 0.01
+        if (upperSymbol.includes('JPY')) {
+            return 0.01;
+        }
+        
+        // Gold (XAU) typically uses 0.1 as pip
+        if (upperSymbol.includes('XAU')) {
+            return 0.1;
+        }
+        
+        // Indices and other instruments
+        if (upperSymbol.includes('US30') || upperSymbol.includes('US500') ||
+            upperSymbol.includes('NAS') || upperSymbol.includes('DAX') ||
+            upperSymbol.includes('SPX')) {
+            return 1;
+        }
+        
+        // Default forex pip size
+        return 0.0001;
+    }
+
+    /**
+     * Calculate pips for a single trade
+     */
+    calculateTradePips(trade) {
+        if (!trade.openPrice || !trade.closePrice || !trade.symbol) {
+            return 0;
+        }
+        
+        const pipSize = this.getPipSize(trade.symbol);
+        const direction = trade.type === 'buy' ? 1 : -1;
+        const priceDiff = trade.closePrice - trade.openPrice;
+        const pips = (priceDiff / pipSize) * direction;
+        
+        return Math.round(pips * 10) / 10; // Round to 1 decimal
     }
 
     /**
@@ -177,6 +226,7 @@ class CalendarManager {
         // P&L data if available
         if (dayData) {
             const profit = dayData.profit;
+            const pips = dayData.pips;
             
             if (profit > 0) {
                 cell.classList.add('profit-day');
@@ -191,6 +241,12 @@ class CalendarManager {
             pnlValue.className = 'day-pnl ' + (profit >= 0 ? 'positive' : 'negative');
             pnlValue.textContent = this.formatCurrency(profit);
             cell.appendChild(pnlValue);
+            
+            // Pips value
+            const pipsValue = document.createElement('div');
+            pipsValue.className = 'day-pips ' + (pips >= 0 ? 'positive' : 'negative');
+            pipsValue.textContent = (pips >= 0 ? '+' : '') + pips.toFixed(1) + ' pips';
+            cell.appendChild(pipsValue);
             
             // Trade count
             const tradeCount = document.createElement('div');
@@ -210,15 +266,18 @@ class CalendarManager {
      */
     createTooltipText(dayData, dateKey) {
         const date = new Date(dateKey);
-        const formattedDate = date.toLocaleDateString('en-US', { 
-            weekday: 'long', 
-            year: 'numeric', 
-            month: 'long', 
-            day: 'numeric' 
+        const formattedDate = date.toLocaleDateString('en-US', {
+            weekday: 'long',
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
         });
+        
+        const pipsSign = dayData.pips >= 0 ? '+' : '';
         
         return `${formattedDate}\n` +
                `P/L: ${this.formatCurrency(dayData.profit)}\n` +
+               `Pips: ${pipsSign}${dayData.pips.toFixed(1)}\n` +
                `Trades: ${dayData.trades}\n` +
                `Wins: ${dayData.wins} | Losses: ${dayData.losses}`;
     }

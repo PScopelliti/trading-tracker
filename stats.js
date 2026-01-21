@@ -66,8 +66,86 @@ class StatsCalculator {
             pnlDistribution: this.getPnLDistribution(),
             dayOfWeekPerformance: this.getDayOfWeekPerformance(),
             hourlyPerformance: this.getHourlyPerformance(),
-            symbolPerformance: this.getSymbolPerformance()
+            symbolPerformance: this.getSymbolPerformance(),
+            
+            // Pips data
+            pipsCurve: this.getPipsCurve(),
+            totalPips: this.getTotalPips()
         };
+    }
+
+    /**
+     * Get pip size for a symbol
+     */
+    getPipSize(symbol) {
+        if (!symbol) return 0.0001;
+        
+        const upperSymbol = symbol.toUpperCase();
+        
+        // JPY pairs have pip size of 0.01
+        if (upperSymbol.includes('JPY')) {
+            return 0.01;
+        }
+        
+        // Gold (XAU) typically uses 0.1 as pip
+        if (upperSymbol.includes('XAU')) {
+            return 0.1;
+        }
+        
+        // Indices and other instruments
+        if (upperSymbol.includes('US30') || upperSymbol.includes('US500') ||
+            upperSymbol.includes('NAS') || upperSymbol.includes('DAX') ||
+            upperSymbol.includes('SPX')) {
+            return 1;
+        }
+        
+        // Default forex pip size
+        return 0.0001;
+    }
+
+    /**
+     * Calculate pips for a single trade
+     */
+    calculateTradePips(trade) {
+        if (!trade.openPrice || !trade.closePrice || !trade.symbol) {
+            return 0;
+        }
+        
+        const pipSize = this.getPipSize(trade.symbol);
+        const direction = trade.type === 'buy' ? 1 : -1;
+        const priceDiff = trade.closePrice - trade.openPrice;
+        const pips = (priceDiff / pipSize) * direction;
+        
+        return Math.round(pips * 10) / 10; // Round to 1 decimal
+    }
+
+    /**
+     * Get total pips
+     */
+    getTotalPips() {
+        return this.trades.reduce((sum, trade) => sum + this.calculateTradePips(trade), 0);
+    }
+
+    /**
+     * Generate pips curve data (cumulative pips over time)
+     */
+    getPipsCurve() {
+        const curve = [];
+        let cumulativePips = 0;
+
+        for (const trade of this.sortedTrades) {
+            const pips = this.calculateTradePips(trade);
+            cumulativePips += pips;
+            curve.push({
+                date: trade.closeTime,
+                pips: Math.round(cumulativePips * 10) / 10,
+                tradePips: pips,
+                symbol: trade.symbol,
+                trade: trade
+            });
+        }
+
+        return curve;
     }
 
     /**

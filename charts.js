@@ -54,6 +54,7 @@ class ChartManager {
      */
     initializeCharts(stats) {
         this.createEquityChart(stats.equityCurve);
+        this.createPipsChart(stats.pipsCurve);
         this.createPnLDistributionChart(stats.pnlDistribution);
         this.createDayOfWeekChart(stats.dayOfWeekPerformance);
         this.createSymbolChart(stats.symbolPerformance);
@@ -143,6 +144,98 @@ class ChartManager {
                         ticks: {
                             ...this.defaultOptions.scales.y.ticks,
                             callback: (value) => '$' + value.toFixed(0)
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    /**
+     * Create cumulative pips chart
+     */
+    createPipsChart(pipsCurve) {
+        const ctx = document.getElementById('pipsChart');
+        if (!ctx) return;
+
+        if (this.charts.pips) {
+            this.charts.pips.destroy();
+        }
+
+        const labels = pipsCurve.map((point, index) => {
+            if (point.date) {
+                const date = new Date(point.date);
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            }
+            return `Trade ${index + 1}`;
+        });
+
+        const data = pipsCurve.map(point => point.pips);
+
+        // Create gradient
+        const gradient = ctx.getContext('2d').createLinearGradient(0, 0, 0, 300);
+        const finalPips = data[data.length - 1] || 0;
+        
+        if (finalPips >= 0) {
+            gradient.addColorStop(0, 'rgba(139, 92, 246, 0.3)');
+            gradient.addColorStop(1, 'rgba(139, 92, 246, 0)');
+        } else {
+            gradient.addColorStop(0, 'rgba(239, 68, 68, 0.3)');
+            gradient.addColorStop(1, 'rgba(239, 68, 68, 0)');
+        }
+
+        this.charts.pips = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Cumulative Pips',
+                    data: data,
+                    borderColor: finalPips >= 0 ? '#8b5cf6' : '#ef4444',
+                    backgroundColor: gradient,
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: data.length > 50 ? 0 : 3,
+                    pointHoverRadius: 6,
+                    pointBackgroundColor: finalPips >= 0 ? '#8b5cf6' : '#ef4444',
+                    pointBorderColor: '#1e2738',
+                    pointBorderWidth: 2
+                }]
+            },
+            options: {
+                ...this.defaultOptions,
+                plugins: {
+                    ...this.defaultOptions.plugins,
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        ...this.defaultOptions.plugins.tooltip,
+                        callbacks: {
+                            title: (context) => {
+                                const index = context[0].dataIndex;
+                                const point = pipsCurve[index];
+                                return point.symbol ? `${point.symbol} - ${context[0].label}` : context[0].label;
+                            },
+                            label: (context) => {
+                                const index = context.dataIndex;
+                                const point = pipsCurve[index];
+                                return [
+                                    `Cumulative: ${context.raw.toFixed(1)} pips`,
+                                    `This trade: ${point.tradePips >= 0 ? '+' : ''}${point.tradePips.toFixed(1)} pips`
+                                ];
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    ...this.defaultOptions.scales,
+                    y: {
+                        ...this.defaultOptions.scales.y,
+                        ticks: {
+                            ...this.defaultOptions.scales.y.ticks,
+                            callback: (value) => value.toFixed(0) + ' pips'
                         }
                     }
                 }

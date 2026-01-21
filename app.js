@@ -283,6 +283,16 @@ function updateStatCards(stats) {
     const returnPercentElement = document.getElementById('returnPercent');
     returnPercentElement.textContent = (returnPercent >= 0 ? '+' : '') + returnPercent.toFixed(2) + '%';
     returnPercentElement.className = 'stat-value ' + (returnPercent >= 0 ? 'positive' : 'negative');
+    
+    // Total Pips
+    const totalPipsElement = document.getElementById('totalPips');
+    const totalPips = stats.totalPips || 0;
+    const pipsFormatted = totalPips.toLocaleString('en-US', {
+        minimumFractionDigits: 1,
+        maximumFractionDigits: 1
+    });
+    totalPipsElement.textContent = (totalPips >= 0 ? '+' : '') + pipsFormatted;
+    totalPipsElement.className = 'stat-value ' + (totalPips >= 0 ? 'positive' : 'negative');
 }
 
 /**
@@ -311,7 +321,7 @@ function updateTradeTable(trades) {
     tbody.innerHTML = '';
     
     // Show most recent trades first
-    const sortedTrades = [...trades].sort((a, b) => 
+    const sortedTrades = [...trades].sort((a, b) =>
         new Date(b.closeTime) - new Date(a.closeTime)
     );
     
@@ -322,6 +332,9 @@ function updateTradeTable(trades) {
         const profitClass = profit >= 0 ? 'profit-positive' : 'profit-negative';
         const typeClass = trade.type === 'buy' ? 'type-buy' : 'type-sell';
         const duration = formatDuration(trade.openTime, trade.closeTime);
+        const pips = calculateTradePips(trade);
+        const pipsClass = pips >= 0 ? 'profit-positive' : 'profit-negative';
+        const pipsFormatted = (pips >= 0 ? '+' : '') + pips.toFixed(1);
         
         row.innerHTML = `
             <td>${formatDate(trade.closeTime)}</td>
@@ -331,11 +344,57 @@ function updateTradeTable(trades) {
             <td>${formatPrice(trade.openPrice, trade.symbol)}</td>
             <td>${formatPrice(trade.closePrice, trade.symbol)}</td>
             <td>${duration}</td>
+            <td class="${pipsClass}">${pipsFormatted}</td>
             <td class="${profitClass}">${formatCurrency(profit)}</td>
         `;
         
         tbody.appendChild(row);
     }
+}
+
+/**
+ * Get pip size for a symbol
+ */
+function getPipSize(symbol) {
+    if (!symbol) return 0.0001;
+    
+    const upperSymbol = symbol.toUpperCase();
+    
+    // JPY pairs have pip size of 0.01
+    if (upperSymbol.includes('JPY')) {
+        return 0.01;
+    }
+    
+    // Gold (XAU) typically uses 0.1 as pip
+    if (upperSymbol.includes('XAU')) {
+        return 0.1;
+    }
+    
+    // Indices and other instruments
+    if (upperSymbol.includes('US30') || upperSymbol.includes('US500') ||
+        upperSymbol.includes('NAS') || upperSymbol.includes('DAX') ||
+        upperSymbol.includes('SPX')) {
+        return 1;
+    }
+    
+    // Default forex pip size
+    return 0.0001;
+}
+
+/**
+ * Calculate pips for a single trade
+ */
+function calculateTradePips(trade) {
+    if (!trade.openPrice || !trade.closePrice || !trade.symbol) {
+        return 0;
+    }
+    
+    const pipSize = getPipSize(trade.symbol);
+    const direction = trade.type === 'buy' ? 1 : -1;
+    const priceDiff = trade.closePrice - trade.openPrice;
+    const pips = (priceDiff / pipSize) * direction;
+    
+    return Math.round(pips * 10) / 10; // Round to 1 decimal
 }
 
 /**
