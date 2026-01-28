@@ -274,6 +274,48 @@ body {
     color: var(--danger);
 }
 
+.stat-card.sharpe {
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(59, 130, 246, 0.05));
+    border-color: rgba(139, 92, 246, 0.3);
+}
+
+.stat-card.sharpe .stat-value {
+    color: var(--text-primary);
+}
+
+.stat-card.sharpe .stat-value.positive {
+    color: var(--success);
+}
+
+.stat-card.sharpe .stat-value.negative {
+    color: var(--danger);
+}
+
+.stat-card.sharpe .stat-icon {
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(59, 130, 246, 0.1));
+}
+
+.stat-card.risk {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(239, 68, 68, 0.05));
+    border-color: rgba(245, 158, 11, 0.3);
+}
+
+.stat-card.risk .stat-value.positive {
+    color: var(--success);
+}
+
+.stat-card.risk .stat-value.warning {
+    color: var(--warning);
+}
+
+.stat-card.risk .stat-value.negative {
+    color: var(--danger);
+}
+
+.stat-card.risk .stat-icon {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.2), rgba(239, 68, 68, 0.1));
+}
+
 .stat-card.balance {
     background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(139, 92, 246, 0.05));
     border-color: rgba(59, 130, 246, 0.3);

@@ -325,6 +325,25 @@ function updateStatCards(stats) {
     });
     totalPipsElement.textContent = (totalPips >= 0 ? '+' : '') + pipsFormatted;
     totalPipsElement.className = 'stat-value ' + (totalPips >= 0 ? 'positive' : 'negative');
+    
+    // Sharpe Ratio
+    const sharpeRatioElement = document.getElementById('sharpeRatio');
+    const sharpeValue = stats.sharpeRatio === Infinity ? '∞' : stats.sharpeRatio.toFixed(2);
+    sharpeRatioElement.textContent = sharpeValue;
+    sharpeRatioElement.className = 'stat-value ' + (stats.sharpeRatio >= 1 ? 'positive' : stats.sharpeRatio >= 0 ? '' : 'negative');
+    
+    // Risk of Ruin
+    const riskOfRuinElement = document.getElementById('riskOfRuin');
+    const rorValue = stats.riskOfRuin;
+    riskOfRuinElement.textContent = rorValue.toFixed(2) + '%';
+    // Color code: green if low risk (<5%), yellow if medium (5-25%), red if high (>25%)
+    if (rorValue < 5) {
+        riskOfRuinElement.className = 'stat-value positive';
+    } else if (rorValue < 25) {
+        riskOfRuinElement.className = 'stat-value warning';
+    } else {
+        riskOfRuinElement.className = 'stat-value negative';
+    }
 }
 
 /**

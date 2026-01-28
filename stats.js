@@ -55,6 +55,8 @@ class StatsCalculator {
             // Ratios
             riskRewardRatio: this.getRiskRewardRatio(),
             expectancy: this.getExpectancy(),
+            sharpeRatio: this.getSharpeRatio(),
+            riskOfRuin: this.getRiskOfRuin(),
             
             // Time-based
             avgHoldingTime: this.getAverageHoldingTime(),
@@ -375,6 +377,84 @@ class StatsCalculator {
         const avgLoss = Math.abs(this.getAverageLoss());
         
         return (winRate * avgWin) - ((1 - winRate) * avgLoss);
+    }
+
+    /**
+     * Calculate Sharpe Ratio
+     * Measures risk-adjusted return: (Mean Return - Risk-Free Rate) / Std Dev of Returns
+     * For trading, we use trade returns with 0 risk-free rate
+     */
+    getSharpeRatio() {
+        if (this.trades.length < 2) return 0;
+        
+        const returns = this.trades.map(trade => this.getTradeProfit(trade));
+        
+        // Calculate mean return
+        const meanReturn = returns.reduce((sum, r) => sum + r, 0) / returns.length;
+        
+        // Calculate standard deviation
+        const squaredDiffs = returns.map(r => Math.pow(r - meanReturn, 2));
+        const variance = squaredDiffs.reduce((sum, d) => sum + d, 0) / returns.length;
+        const stdDev = Math.sqrt(variance);
+        
+        // Avoid division by zero
+        if (stdDev === 0) return meanReturn > 0 ? Infinity : 0;
+        
+        // Sharpe Ratio (assuming 0 risk-free rate for trading)
+        // Annualized by sqrt(252) for daily trading, but we use per-trade
+        return meanReturn / stdDev;
+    }
+
+    /**
+     * Calculate Risk of Ruin
+     * Probability of losing a significant portion of the account
+     * Using the formula: ((1 - edge) / (1 + edge))^n
+     * Where edge = (winRate * avgWin - lossRate * avgLoss) / avgLoss
+     * Returns percentage (0-100%)
+     */
+    getRiskOfRuin() {
+        if (this.trades.length < 2) return 0;
+        
+        const winRate = this.getWinRate() / 100;
+        const lossRate = 1 - winRate;
+        const avgWin = this.getAverageWin();
+        const avgLoss = Math.abs(this.getAverageLoss());
+        
+        // Avoid edge cases
+        if (avgLoss === 0) return 0; // No losses = no risk
+        if (winRate === 0) return 100; // All losses = certain ruin
+        if (winRate === 1) return 0; // All wins = no risk
+        
+        // Calculate edge (profit per dollar risked)
+        const edge = (winRate * avgWin - lossRate * avgLoss) / avgLoss;
+        
+        // If edge is negative or zero, high risk of ruin
+        if (edge <= 0) {
+            return 100;
+        }
+        
+        // Risk of Ruin formula for fixed fractional betting
+        // RoR = ((1 - edge) / (1 + edge))^units
+        // We calculate the probability using a simplified model
+        // Based on the Kelly-inspired formula
+        
+        // Calculate the critical ratio
+        const ratio = (1 - edge) / (1 + edge);
+        
+        // If ratio >= 1, ruin is certain in the long run
+        if (ratio >= 1) {
+            return 100;
+        }
+        
+        // Number of "units" at risk - using capital units (typically 20-50 for account)
+        // We'll use 20 units as a baseline (5% risk per trade)
+        const units = 20;
+        
+        // Calculate probability of ruin
+        const riskOfRuin = Math.pow(ratio, units) * 100;
+        
+        // Cap at reasonable values
+        return Math.min(100, Math.max(0, riskOfRuin));
     }
 
     /**
