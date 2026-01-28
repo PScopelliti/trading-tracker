@@ -10,6 +10,7 @@ let chartManager = null;
 let calendarManager = null;
 let currentTrades = [];
 let currentCurrency = 'USD'; // Will be detected from file
+let initialBalance = 0; // Will be extracted from report
 
 // Initialize application
 document.addEventListener('DOMContentLoaded', () => {
@@ -83,6 +84,9 @@ async function processFile(file) {
     try {
         showToast('Processing file...', 'info');
         
+        // Reset initial balance before parsing
+        initialBalance = 0;
+        
         const trades = await parser.parseFile(file);
         currentTrades = trades;
         
@@ -92,6 +96,15 @@ async function processFile(file) {
         } else if (parser.currency) {
             currentCurrency = parser.currency;
         }
+        
+        // Extract initial balance from parsed data
+        if (trades.initialBalance && trades.initialBalance > 0) {
+            initialBalance = trades.initialBalance;
+        } else if (parser.initialBalance && parser.initialBalance > 0) {
+            initialBalance = parser.initialBalance;
+        }
+        
+        console.log('Initial balance set to:', initialBalance);
         
         showToast(`Successfully loaded ${trades.length} trades!`, 'success');
         displayDashboard(trades);
@@ -108,6 +121,10 @@ async function processFile(file) {
 function loadSampleData() {
     const sampleTrades = generateSampleTrades();
     currentTrades = sampleTrades;
+    
+    // Set a sample initial balance of $10,000
+    initialBalance = 10000;
+    currentCurrency = 'USD';
     
     showToast(`Loaded ${sampleTrades.length} sample trades`, 'success');
     displayDashboard(sampleTrades);
@@ -238,7 +255,7 @@ function displayDashboard(trades) {
     
     // Create charts
     chartManager.destroyCharts();
-    chartManager.initializeCharts(stats);
+    chartManager.initializeCharts(stats, initialBalance);
     
     // Initialize calendar with trade data
     calendarManager.initialize(trades);
@@ -253,6 +270,14 @@ function displayDashboard(trades) {
  * Update stat cards in the dashboard
  */
 function updateStatCards(stats) {
+    // Initial Balance
+    const initialBalanceElement = document.getElementById('initialBalance');
+    if (initialBalance > 0) {
+        initialBalanceElement.textContent = formatCurrency(initialBalance);
+    } else {
+        initialBalanceElement.textContent = 'N/A';
+    }
+    
     // Total P&L
     const pnlElement = document.getElementById('totalPnL');
     const pnlValue = stats.netPnL;
@@ -278,8 +303,15 @@ function updateStatCards(stats) {
     // Average Trade
     document.getElementById('avgTrade').textContent = formatCurrency(stats.avgTrade);
     
-    // Return Percent (based on initial balance if available, otherwise show profit as % of max drawdown)
-    const returnPercent = stats.maxDrawdown > 0 ? (stats.netPnL / stats.maxDrawdown) * 100 : 0;
+    // Return Percent - calculate based on initial balance if available
+    let returnPercent = 0;
+    if (initialBalance > 0) {
+        // True Return % = (Net P&L / Initial Balance) × 100
+        returnPercent = (stats.netPnL / initialBalance) * 100;
+    } else if (stats.maxDrawdown > 0) {
+        // Fallback to recovery factor if no initial balance
+        returnPercent = (stats.netPnL / stats.maxDrawdown) * 100;
+    }
     const returnPercentElement = document.getElementById('returnPercent');
     returnPercentElement.textContent = (returnPercent >= 0 ? '+' : '') + returnPercent.toFixed(2) + '%';
     returnPercentElement.className = 'stat-value ' + (returnPercent >= 0 ? 'positive' : 'negative');
@@ -403,6 +435,8 @@ function calculateTradePips(trade) {
 function resetDashboard() {
     chartManager.destroyCharts();
     currentTrades = [];
+    initialBalance = 0;
+    currentCurrency = 'USD';
     
     document.getElementById('dashboard').style.display = 'none';
     document.getElementById('uploadSection').style.display = 'flex';

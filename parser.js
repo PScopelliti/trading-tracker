@@ -8,6 +8,7 @@ class TradeParser {
         this.trades = [];
         this.currency = 'USD'; // Default currency, will be detected from file
         this.accountInfo = {};
+        this.initialBalance = 0; // Will be extracted from report
     }
 
     /**
@@ -277,7 +278,11 @@ class TradeParser {
         // Extract account info and currency first
         this.extractAccountInfo(doc);
         
+        // Extract initial balance from Deals section
+        this.extractInitialBalance(doc);
+        
         console.log('Detected currency:', this.currency);
+        console.log('Initial balance:', this.initialBalance);
         
         // Try MT5-specific parsing first
         const mt5Trades = this.parseMT5Report(doc);
@@ -285,6 +290,7 @@ class TradeParser {
             console.log('Parsed MT5 trades:', mt5Trades.length);
             mt5Trades.currency = this.currency;
             mt5Trades.accountInfo = this.accountInfo;
+            mt5Trades.initialBalance = this.initialBalance;
             return mt5Trades;
         }
 
@@ -306,9 +312,10 @@ class TradeParser {
             throw new Error('No valid trades found in HTML file');
         }
 
-        // Attach currency info to result
+        // Attach currency info and initial balance to result
         trades.currency = this.currency;
         trades.accountInfo = this.accountInfo;
+        trades.initialBalance = this.initialBalance;
 
         return trades;
     }
@@ -337,6 +344,53 @@ class TradeParser {
         if (nameMatch) {
             this.accountInfo.name = nameMatch[1].trim();
         }
+    }
+
+    /**
+     * Extract initial balance from the Deals section
+     * Looks for the first "balance" type entry which represents the initial deposit
+     */
+    extractInitialBalance(doc) {
+        const allRows = doc.querySelectorAll('tr');
+        
+        // Simple approach: scan all rows for a "balance" type entry
+        for (const row of allRows) {
+            const cells = row.querySelectorAll('td');
+            if (cells.length < 5) continue;
+            
+            // Get all visible cell values
+            const visibleValues = [];
+            for (const cell of cells) {
+                const className = cell.getAttribute('class') || '';
+                if (className.includes('hidden')) continue;
+                visibleValues.push(cell.textContent.trim());
+            }
+            
+            // Check if any cell contains exactly "balance" (case-insensitive)
+            const hasBalance = visibleValues.some(v => v.toLowerCase() === 'balance');
+            
+            if (hasBalance) {
+                console.log('Found balance row:', visibleValues.slice(0, 5).join(', '));
+                
+                // Look through all values for a number >= 100 (likely the deposit)
+                // Start from the end since Profit/Balance columns are usually at the end
+                for (let j = visibleValues.length - 1; j >= 0; j--) {
+                    const value = visibleValues[j];
+                    const parsed = this.parseNumber(value);
+                    
+                    // Look for a substantial positive number (deposit amount)
+                    // Skip zeros and small amounts
+                    if (parsed >= 100) {
+                        this.initialBalance = parsed;
+                        this.accountInfo.initialBalance = parsed;
+                        console.log('Extracted initial balance:', this.initialBalance);
+                        return;
+                    }
+                }
+            }
+        }
+        
+        console.log('No initial balance found in Deals section');
     }
 
     /**

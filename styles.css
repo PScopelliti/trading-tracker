@@ -274,6 +274,19 @@ body {
     color: var(--danger);
 }
 
+.stat-card.balance {
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(139, 92, 246, 0.05));
+    border-color: rgba(59, 130, 246, 0.3);
+}
+
+.stat-card.balance .stat-value {
+    color: var(--accent-primary);
+}
+
+.stat-card.balance .stat-icon {
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(139, 92, 246, 0.1));
+}
+
 /* Charts Container */
 .charts-container {
     display: grid;

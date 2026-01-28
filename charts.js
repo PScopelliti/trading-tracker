@@ -52,8 +52,8 @@ class ChartManager {
     /**
      * Initialize all charts with stats data
      */
-    initializeCharts(stats) {
-        this.createEquityChart(stats.equityCurve);
+    initializeCharts(stats, initialBalance = 0) {
+        this.createEquityChart(stats.equityCurve, initialBalance);
         this.createPipsChart(stats.pipsCurve);
         this.createPnLDistributionChart(stats.pnlDistribution);
         this.createDayOfWeekChart(stats.dayOfWeekPerformance);
@@ -74,7 +74,7 @@ class ChartManager {
     /**
      * Create equity curve chart
      */
-    createEquityChart(equityCurve) {
+    createEquityChart(equityCurve, initialBalance = 0) {
         const ctx = document.getElementById('equityChart');
         if (!ctx) return;
 
@@ -82,21 +82,34 @@ class ChartManager {
             this.charts.equity.destroy();
         }
 
-        const labels = equityCurve.map((point, index) => {
+        // Add initial balance as the starting point if available
+        let chartLabels = [];
+        let chartData = [];
+        
+        if (initialBalance > 0) {
+            // Add starting point with initial balance
+            chartLabels.push('Start');
+            chartData.push(initialBalance);
+        }
+        
+        // Add trade data points
+        equityCurve.forEach((point, index) => {
             if (point.date) {
                 const date = new Date(point.date);
-                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                chartLabels.push(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+            } else {
+                chartLabels.push(`Trade ${index + 1}`);
             }
-            return `Trade ${index + 1}`;
+            // Add initial balance to equity values so chart shows absolute balance
+            chartData.push(initialBalance + point.equity);
         });
-
-        const data = equityCurve.map(point => point.equity);
 
         // Create gradient
         const gradient = ctx.getContext('2d').createLinearGradient(0, 0, 0, 300);
-        const finalEquity = data[data.length - 1] || 0;
+        const finalEquity = chartData[chartData.length - 1] || initialBalance;
+        const netPnL = finalEquity - initialBalance;
         
-        if (finalEquity >= 0) {
+        if (netPnL >= 0) {
             gradient.addColorStop(0, 'rgba(16, 185, 129, 0.3)');
             gradient.addColorStop(1, 'rgba(16, 185, 129, 0)');
         } else {
@@ -107,18 +120,18 @@ class ChartManager {
         this.charts.equity = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: labels,
+                labels: chartLabels,
                 datasets: [{
-                    label: 'Equity',
-                    data: data,
-                    borderColor: finalEquity >= 0 ? '#10b981' : '#ef4444',
+                    label: 'Balance',
+                    data: chartData,
+                    borderColor: netPnL >= 0 ? '#10b981' : '#ef4444',
                     backgroundColor: gradient,
                     borderWidth: 2,
                     fill: true,
                     tension: 0.4,
-                    pointRadius: data.length > 50 ? 0 : 3,
+                    pointRadius: chartData.length > 50 ? 0 : 3,
                     pointHoverRadius: 6,
-                    pointBackgroundColor: finalEquity >= 0 ? '#10b981' : '#ef4444',
+                    pointBackgroundColor: netPnL >= 0 ? '#10b981' : '#ef4444',
                     pointBorderColor: '#1e2738',
                     pointBorderWidth: 2
                 }]
@@ -133,7 +146,18 @@ class ChartManager {
                     tooltip: {
                         ...this.defaultOptions.plugins.tooltip,
                         callbacks: {
-                            label: (context) => `Equity: $${context.raw.toFixed(2)}`
+                            label: (context) => {
+                                const balance = context.raw;
+                                const pnl = balance - initialBalance;
+                                if (initialBalance > 0) {
+                                    const pnlSign = pnl >= 0 ? '+' : '';
+                                    return [
+                                        `Balance: $${balance.toFixed(2)}`,
+                                        `P&L: ${pnlSign}$${pnl.toFixed(2)}`
+                                    ];
+                                }
+                                return `Equity: $${balance.toFixed(2)}`;
+                            }
                         }
                     }
                 },
