@@ -1,6 +1,20 @@
 /**
  * MT4/MT5 Trade History Parser
  * Supports CSV and HTML export formats from MetaTrader
+ *
+ * Supported CSV Formats:
+ * 1. MT5 CSV Export (semicolon-separated):
+ *    Format: Ticket;Symbol;Type;Lots;OpenTime;CloseTime;OpenPrice;ClosePrice;Profit;Swap;Commission;TotalPL;Comment;Magic;Source
+ *    Date format: YYYY.MM.DD HH:MM:SS
+ *
+ * 2. MT4 CSV Export (comma-separated):
+ *    Format: Ticket, Open Time, Type, Size, Symbol, Open Price, S/L, T/P, Close Time, Close Price, Commission, Swap, Profit
+ *
+ * 3. Generic CSV formats with automatic column detection
+ *
+ * Supported HTML Formats:
+ * - MT4/MT5 HTML reports (UTF-8, UTF-16 LE/BE)
+ * - Automatic encoding detection
  */
 
 class TradeParser {
@@ -116,20 +130,31 @@ class TradeParser {
         const trades = [];
         const startIndex = columnMap ? 1 : 0;
 
+        console.log('CSV Format detected - Column map:', columnMap);
+        console.log('Header row:', headerRow);
+
         for (let i = startIndex; i < lines.length; i++) {
             const values = this.parseCSVLine(lines[i]);
             if (values.length < 5) continue;
 
             try {
-                const trade = columnMap 
+                const trade = columnMap
                     ? this.mapColumnsToTrade(values, columnMap)
                     : this.parseGenericCSVRow(values);
                 
                 if (trade && this.isValidTrade(trade)) {
+                    // Ensure proper data types
+                    trade.profit = parseFloat(trade.profit) || 0;
+                    trade.commission = parseFloat(trade.commission) || 0;
+                    trade.swap = parseFloat(trade.swap) || 0;
+                    trade.volume = parseFloat(trade.volume) || 0.01;
+                    trade.openPrice = parseFloat(trade.openPrice) || 0;
+                    trade.closePrice = parseFloat(trade.closePrice) || 0;
+                    
                     trades.push(trade);
                 }
             } catch (e) {
-                console.warn(`Skipping invalid row ${i}:`, e.message);
+                console.warn(`Skipping invalid row ${i}:`, e.message, 'Values:', values.slice(0, 5));
             }
         }
 
@@ -137,6 +162,7 @@ class TradeParser {
             throw new Error('No valid trades found in CSV file');
         }
 
+        console.log(`Successfully parsed ${trades.length} trades from CSV`);
         return trades;
     }
 
@@ -171,14 +197,15 @@ class TradeParser {
 
         const patterns = {
             ticket: /ticket|order|deal/i,
-            openTime: /open\s*time|time\s*open|entry\s*time/i,
-            closeTime: /close\s*time|time\s*close|exit\s*time/i,
+            openTime: /open\s*time|time\s*open|entry\s*time|opentime/i,
+            closeTime: /close\s*time|time\s*close|exit\s*time|closetime/i,
             type: /type|direction|side/i,
             volume: /volume|size|lots?/i,
             symbol: /symbol|instrument|pair/i,
-            openPrice: /open\s*price|entry\s*price|price\s*open/i,
-            closePrice: /close\s*price|exit\s*price|price\s*close/i,
-            profit: /profit|p[\/&]?l|pnl|result|gross/i,
+            openPrice: /open\s*price|entry\s*price|price\s*open|openprice/i,
+            closePrice: /close\s*price|exit\s*price|price\s*close|closeprice/i,
+            profit: /^profit$|p[\/&]?l|pnl|result|gross/i,
+            totalPL: /total\s*p[\/&]?l|totalpl|total\s*profit/i,
             commission: /commission|comm/i,
             swap: /swap|rollover/i,
             sl: /s[\/]?l|stop\s*loss/i,
@@ -218,8 +245,12 @@ class TradeParser {
             closeTime: map.closeTime !== undefined ? this.parseDate(values[map.closeTime]) : new Date()
         };
 
-        // Calculate net profit
-        trade.netProfit = trade.profit + trade.commission + trade.swap;
+        // Use TotalPL if available, otherwise calculate net profit
+        if (map.totalPL !== undefined) {
+            trade.netProfit = parseFloat(values[map.totalPL]) || 0;
+        } else {
+            trade.netProfit = trade.profit + trade.commission + trade.swap;
+        }
         
         return trade;
     }
@@ -228,6 +259,25 @@ class TradeParser {
      * Parse generic CSV row (fallback)
      */
     parseGenericCSVRow(values) {
+        // Check for MT5 CSV format: Ticket;Symbol;Type;Lots;OpenTime;CloseTime;OpenPrice;ClosePrice;Profit;Swap;Commission;TotalPL;...
+        if (values.length >= 12 && this.looksLikeMT5Format(values)) {
+            console.log('Parsing as MT5 format:', values.slice(0, 8));
+            return {
+                ticket: values[0],
+                symbol: values[1],
+                type: this.normalizeType(values[2]),
+                volume: parseFloat(values[3]) || 0.01,
+                openTime: this.parseDate(values[4]),
+                closeTime: this.parseDate(values[5]),
+                openPrice: parseFloat(values[6]) || 0,
+                closePrice: parseFloat(values[7]) || 0,
+                profit: parseFloat(values[8]) || 0,
+                swap: parseFloat(values[9]) || 0,
+                commission: parseFloat(values[10]) || 0,
+                netProfit: parseFloat(values[11]) || ((parseFloat(values[8]) || 0) + (parseFloat(values[9]) || 0) + (parseFloat(values[10]) || 0))
+            };
+        }
+
         // Try common MT4 format: Ticket, Open Time, Type, Size, Symbol, Open Price, S/L, T/P, Close Time, Close Price, Commission, Swap, Profit
         if (values.length >= 13) {
             return {
@@ -266,6 +316,30 @@ class TradeParser {
         }
 
         return null;
+    }
+
+    /**
+     * Check if values look like MT5 CSV format
+     */
+    looksLikeMT5Format(values) {
+        // Check if first value looks like a ticket number
+        if (!/^\d+$/.test(values[0])) return false;
+        
+        // Check if second value looks like a symbol (contains letters and possibly numbers/underscores)
+        if (!/^[A-Za-z0-9_]+$/.test(values[1])) return false;
+        
+        // Check if third value is BUY or SELL
+        const type = values[2].toUpperCase();
+        if (type !== 'BUY' && type !== 'SELL') return false;
+        
+        // Check if fourth value is a valid volume (decimal number)
+        if (isNaN(parseFloat(values[3]))) return false;
+        
+        // Check if date fields contain dots (MT5 date format)
+        if (values[4] && !values[4].includes('.')) return false;
+        if (values[5] && !values[5].includes('.')) return false;
+        
+        return true;
     }
 
     /**
@@ -679,27 +753,52 @@ class TradeParser {
      * Parse date from various formats
      */
     parseDate(value) {
-        if (!value) return new Date();
+        if (!value || value.trim() === '') return new Date();
         
-        // Try direct parsing
-        let date = new Date(value);
+        const trimmed = value.trim();
+        
+        // Try direct parsing first
+        let date = new Date(trimmed);
         if (!isNaN(date.getTime())) return date;
 
-        // Try MT4/MT5 format: YYYY.MM.DD HH:MM:SS
-        const mt4Match = value.match(/(\d{4})\.(\d{2})\.(\d{2})\s+(\d{2}):(\d{2}):?(\d{2})?/);
+        // Try MT4/MT5 format: YYYY.MM.DD HH:MM:SS (most common format)
+        const mt4Match = trimmed.match(/(\d{4})\.(\d{2})\.(\d{2})\s+(\d{2}):(\d{2}):?(\d{2})?/);
         if (mt4Match) {
             return new Date(
-                parseInt(mt4Match[1]),
-                parseInt(mt4Match[2]) - 1,
-                parseInt(mt4Match[3]),
-                parseInt(mt4Match[4]),
-                parseInt(mt4Match[5]),
-                parseInt(mt4Match[6] || 0)
+                parseInt(mt4Match[1]),      // year
+                parseInt(mt4Match[2]) - 1,  // month (0-based)
+                parseInt(mt4Match[3]),      // day
+                parseInt(mt4Match[4]),      // hours
+                parseInt(mt4Match[5]),      // minutes
+                parseInt(mt4Match[6] || 0)  // seconds
             );
         }
 
-        // Try DD.MM.YYYY format
-        const euMatch = value.match(/(\d{2})\.(\d{2})\.(\d{4})/);
+        // Try YYYY.MM.DD format (date only)
+        const dateOnlyMatch = trimmed.match(/(\d{4})\.(\d{2})\.(\d{2})$/);
+        if (dateOnlyMatch) {
+            return new Date(
+                parseInt(dateOnlyMatch[1]),
+                parseInt(dateOnlyMatch[2]) - 1,
+                parseInt(dateOnlyMatch[3])
+            );
+        }
+
+        // Try DD.MM.YYYY HH:MM:SS format (European style with time)
+        const euTimeMatch = trimmed.match(/(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2}):?(\d{2})?/);
+        if (euTimeMatch) {
+            return new Date(
+                parseInt(euTimeMatch[3]),      // year
+                parseInt(euTimeMatch[2]) - 1,  // month (0-based)
+                parseInt(euTimeMatch[1]),      // day
+                parseInt(euTimeMatch[4]),      // hours
+                parseInt(euTimeMatch[5]),      // minutes
+                parseInt(euTimeMatch[6] || 0)  // seconds
+            );
+        }
+
+        // Try DD.MM.YYYY format (date only)
+        const euMatch = trimmed.match(/(\d{2})\.(\d{2})\.(\d{4})$/);
         if (euMatch) {
             return new Date(
                 parseInt(euMatch[3]),
@@ -708,6 +807,20 @@ class TradeParser {
             );
         }
 
+        // Try YYYY-MM-DD HH:MM:SS format (ISO-like)
+        const isoMatch = trimmed.match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2}):?(\d{2})?/);
+        if (isoMatch) {
+            return new Date(
+                parseInt(isoMatch[1]),
+                parseInt(isoMatch[2]) - 1,
+                parseInt(isoMatch[3]),
+                parseInt(isoMatch[4]),
+                parseInt(isoMatch[5]),
+                parseInt(isoMatch[6] || 0)
+            );
+        }
+
+        console.warn('Could not parse date:', value);
         return new Date();
     }
 
