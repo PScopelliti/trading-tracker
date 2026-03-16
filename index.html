@@ -262,10 +262,16 @@
                 </div>
             </div>
 
-            <!-- Reset Button -->
+            <!-- Control Buttons -->
             <div class="reset-section">
+                <button class="refresh-btn" onclick="refreshData()" id="refreshBtn" style="display: none;">
+                    🔄 Refresh Data
+                </button>
+                <button class="auto-refresh-btn" onclick="toggleAutoRefresh()" id="autoRefreshBtn" style="display: none;">
+                    ⏱️ Auto Refresh: OFF
+                </button>
                 <button class="reset-btn" onclick="resetDashboard()">
-                    🔄 Upload New Data
+                    📁 Upload New Data
                 </button>
             </div>
         </section>

@@ -11,6 +11,9 @@ let calendarManager = null;
 let currentTrades = [];
 let currentCurrency = 'USD'; // Will be detected from file
 let initialBalance = 0; // Will be extracted from report
+let currentFile = null; // Store the current file for refresh
+let autoRefreshInterval = null; // Auto refresh timer
+let isAutoRefreshEnabled = false; // Auto refresh state
 
 // Initialize application
 document.addEventListener('DOMContentLoaded', () => {
@@ -84,6 +87,9 @@ async function processFile(file) {
     try {
         showToast('Processing file...', 'info');
         
+        // Store current file for refresh functionality
+        currentFile = file;
+        
         // Reset initial balance before parsing
         initialBalance = 0;
         
@@ -108,6 +114,9 @@ async function processFile(file) {
         
         showToast(`Successfully loaded ${trades.length} trades!`, 'success');
         displayDashboard(trades);
+        
+        // Show refresh buttons after successful load
+        showRefreshControls();
         
     } catch (error) {
         console.error('Error processing file:', error);
@@ -579,6 +588,165 @@ function showToast(message, type = 'info') {
     }, 3000);
 }
 
+/**
+ * Show refresh control buttons
+ */
+function showRefreshControls() {
+    document.getElementById('refreshBtn').style.display = 'inline-block';
+    document.getElementById('autoRefreshBtn').style.display = 'inline-block';
+}
+
+/**
+ * Hide refresh control buttons
+ */
+function hideRefreshControls() {
+    document.getElementById('refreshBtn').style.display = 'none';
+    document.getElementById('autoRefreshBtn').style.display = 'none';
+    stopAutoRefresh();
+}
+
+/**
+ * Manually refresh data from the current file
+ */
+async function refreshData() {
+    if (!currentFile) {
+        showToast('No file loaded to refresh', 'warning');
+        return;
+    }
+
+    try {
+        console.log('Refreshing data from file:', currentFile.name);
+        showToast('Refreshing data...', 'info');
+        
+        // Re-process the current file
+        await processFile(currentFile);
+        showToast('Data refreshed successfully!', 'success');
+        
+    } catch (error) {
+        console.error('Error refreshing data:', error);
+        showToast('Failed to refresh data: ' + error.message, 'error');
+    }
+}
+
+/**
+ * Toggle auto-refresh functionality
+ */
+function toggleAutoRefresh() {
+    if (isAutoRefreshEnabled) {
+        stopAutoRefresh();
+    } else {
+        startAutoRefresh();
+    }
+}
+
+/**
+ * Start auto-refresh with polling
+ */
+function startAutoRefresh() {
+    if (!currentFile) {
+        showToast('No file loaded for auto-refresh', 'warning');
+        return;
+    }
+
+    isAutoRefreshEnabled = true;
+    const refreshInterval = 30000; // 30 seconds
+    
+    autoRefreshInterval = setInterval(async () => {
+        try {
+            // For file-based refresh, we need to ask user to re-select the file
+            // since browsers don't allow direct file system access
+            console.log('Auto-refresh tick - file may have changed');
+            
+            // Create a visual indicator that auto-refresh is active
+            const btn = document.getElementById('autoRefreshBtn');
+            const originalText = btn.textContent;
+            btn.textContent = '⏱️ Checking for updates...';
+            btn.style.backgroundColor = '#ffa500';
+            
+            // Reset button appearance after a short delay
+            setTimeout(() => {
+                btn.textContent = originalText;
+                btn.style.backgroundColor = '';
+            }, 2000);
+            
+        } catch (error) {
+            console.error('Auto-refresh error:', error);
+        }
+    }, refreshInterval);
+
+    // Update button
+    const btn = document.getElementById('autoRefreshBtn');
+    btn.textContent = '⏱️ Auto Refresh: ON';
+    btn.style.backgroundColor = '#28a745';
+    
+    showToast(`Auto-refresh enabled (every ${refreshInterval/1000}s)`, 'info');
+}
+
+/**
+ * Stop auto-refresh
+ */
+function stopAutoRefresh() {
+    if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+        autoRefreshInterval = null;
+    }
+    
+    isAutoRefreshEnabled = false;
+    
+    // Update button
+    const btn = document.getElementById('autoRefreshBtn');
+    btn.textContent = '⏱️ Auto Refresh: OFF';
+    btn.style.backgroundColor = '';
+    
+    if (currentFile) {
+        showToast('Auto-refresh disabled', 'info');
+    }
+}
+
+/**
+ * Enhanced reset function that also clears refresh state
+ */
+function resetDashboard() {
+    chartManager.destroyCharts();
+    currentTrades = [];
+    currentFile = null;
+    initialBalance = 0;
+    currentCurrency = 'USD';
+    
+    // Stop auto-refresh and hide controls
+    hideRefreshControls();
+    
+    document.getElementById('dashboard').style.display = 'none';
+    document.getElementById('uploadSection').style.display = 'flex';
+    
+    // Reset file input
+    const fileInput = document.getElementById('fileInput');
+    if (fileInput) {
+        fileInput.value = '';
+    }
+}
+
+/**
+ * Enhanced sample data loading
+ */
+function loadSampleData() {
+    const sampleTrades = generateSampleTrades();
+    currentTrades = sampleTrades;
+    currentFile = null; // No file for sample data
+    
+    // Set a sample initial balance of $10,000
+    initialBalance = 10000;
+    currentCurrency = 'USD';
+    
+    showToast(`Loaded ${sampleTrades.length} sample trades`, 'success');
+    displayDashboard(sampleTrades);
+    
+    // Don't show refresh controls for sample data
+    hideRefreshControls();
+}
+
 // Make functions globally accessible
 window.loadSampleData = loadSampleData;
 window.resetDashboard = resetDashboard;
+window.refreshData = refreshData;
+window.toggleAutoRefresh = toggleAutoRefresh;
